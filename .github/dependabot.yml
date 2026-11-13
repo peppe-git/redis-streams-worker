@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      maven-minor-and-patch:
+        update-types: [minor, patch]
+      maven-major:
+        update-types: [major]
+    ignore:
+      # The build compiles against the OLDEST supported lines on purpose (Spring Boot 3.5, Lettuce 6.6);
+      # compat/spring-boot-4 tests the newest. A major bump here would drop support silently.
+      - dependency-name: 'io.lettuce:lettuce-core'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'org.springframework.boot:*'
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
