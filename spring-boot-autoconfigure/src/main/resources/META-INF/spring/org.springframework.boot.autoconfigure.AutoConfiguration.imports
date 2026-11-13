@@ -1,0 +1,2 @@
+io.github.peppe_git.redisstreamsworker.autoconfigure.RedisStreamsWorkerAutoConfiguration
+io.github.peppe_git.redisstreamsworker.autoconfigure.RedisLockAutoConfiguration

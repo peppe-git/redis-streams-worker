@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.peppe-git</groupId>
+        <artifactId>redis-streams-worker-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>redis-streams-worker-spring-boot-starter</artifactId>
+    <name>redis-streams-worker-spring-boot-starter</name>
+    <description>Starter: redis-streams-worker with its Spring Boot auto-configuration and Spring Data Redis (Lettuce).</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.peppe-git</groupId>
+            <artifactId>redis-streams-worker-spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.peppe-git</groupId>
+            <artifactId>redis-streams-worker-core</artifactId>
+        </dependency>
+        <dependency>
+            <!-- Version managed by the application's Spring Boot; this one is only the baseline. -->
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <version>${spring-boot.version}</version>
+        </dependency>
+    </dependencies>
+</project>

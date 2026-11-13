@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scrub:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # commit messages are scanned too
+      - name: Scrub check must be able to fail
+        run: scripts/scrub-check.sh --self-test
+      - name: Scrub check
+        run: scripts/scrub-check.sh
+
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Build and test (Testcontainers uses the runner's Docker)
+        run: ./mvnw -B verify
+      - name: Keep test reports
+        if: failure()
+        run: tar czf test-reports.tgz $(find . -path '*/target/*-reports' -type d)
+
+  redis-6-2:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Core suite on the oldest supported Redis
+        run: ./mvnw -B verify -pl core -Drsw.redis.image=redis:6.2-alpine
