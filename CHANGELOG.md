@@ -22,3 +22,5 @@ All notable changes to this project are documented here. The format follows
   `LockOwnership`; `RedisSemaphore`. No fencing token.
 - Spring Boot auto-configuration and starter (Spring Boot 3.5 and 4.x).
 - Tests against a real Redis with Testcontainers, including chaos tests.
+- Release tooling: `release` Maven profile (sources, javadoc, GPG, Central Portal upload with manual
+  publication), tag-triggered release workflow, Dependabot, `RELEASING.md`.

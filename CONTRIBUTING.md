@@ -39,6 +39,10 @@ rules only; if the variable names a missing file it exits with 2. Never commit t
 - Every source file starts with `SPDX-License-Identifier: Apache-2.0`.
 - Commit messages: `type(scope): sentence`, for example `fix(core): keep the lease of deferred messages`.
 
+## Releases
+
+See [RELEASING.md](RELEASING.md).
+
 ## License
 
 By contributing you agree that your contributions are licensed under the Apache License 2.0.

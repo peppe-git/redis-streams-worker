@@ -189,6 +189,7 @@ Java 17+. Built and tested with Spring Boot 3.5 / Lettuce 6.6, and with Spring B
 
 Needs Docker for the Testcontainers tests. `-Drsw.redis.image=redis:6.2-alpine` runs the suite on
 another Redis image.
+Releases: [RELEASING.md](RELEASING.md).
 
 ## License
 
