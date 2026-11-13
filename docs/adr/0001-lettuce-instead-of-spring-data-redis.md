@@ -1,6 +1,6 @@
 # ADR 0001 — Lettuce in the core, not Spring Data Redis
 
-- Status: accepted (to be confirmed by the maintainer before 0.1.0)
+- Status: accepted
 - Date: 2026-11-12
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0004 — Consumer groups start at `0` (EARLIEST) by default
 
-- Status: accepted (to be confirmed)
+- Status: accepted
 - Date: 2026-11-12
 
 ## Context

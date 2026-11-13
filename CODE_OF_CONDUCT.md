@@ -5,5 +5,5 @@ This project follows the [Contributor Covenant, version 2.1](https://www.contrib
 In short: be respectful, assume good faith, and keep discussions about the code. Harassment of any
 kind is not tolerated.
 
-Report unacceptable behaviour privately to the maintainers through the contact listed on the
-repository's GitHub profile. Reports are handled confidentially.
+Report unacceptable behaviour privately to the maintainer through their GitHub profile,
+<https://github.com/peppe-git>. Reports are handled confidentially.
