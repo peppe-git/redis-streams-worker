@@ -12,10 +12,11 @@ updates:
       maven-major:
         update-types: [major]
     ignore:
-      # The build compiles against the OLDEST supported lines on purpose (Spring Boot 3.5, Lettuce 6.6);
-      # compat/spring-boot-4 tests the newest. A major bump here would drop support silently.
+      # The build compiles against the OLDEST supported lines on purpose: Lettuce is the line managed by
+      # Spring Boot 3.5 (only its patches are welcome), Spring Boot stays on 3.x. compat/spring-boot-4 does
+      # not declare Lettuce at all: it gets it from the Spring Boot 4 BOM, so nothing here can downgrade it.
       - dependency-name: 'io.lettuce:lettuce-core'
-        update-types: ['version-update:semver-major']
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
       - dependency-name: 'org.springframework.boot:*'
         update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
