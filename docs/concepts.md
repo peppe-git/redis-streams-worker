@@ -54,13 +54,20 @@ finish. Without a provider the capacity is `concurrency` (default 4).
 
 When a message starts, the worker writes a **lease**: `SET <prefix>:lease:<lane>:<id> <consumer> PX
 leaseTtl`. A dedicated heartbeat thread renews every running message's lease every `heartbeatInterval`
-with a compare-and-extend script:
+with one script that first checks the pending entry, then the lease:
 
-| Lease value | Heartbeat does | Meaning |
-|---|---|---|
-| this consumer | extend the TTL | normal case |
-| missing | take it again | it expired (pause, Redis restart without the key) and nobody took the message |
-| another consumer | stop, report `onLeaseLost` | another worker reclaimed the message; `MessageContext.leaseHeld()` turns `false` |
+| Pending entry | Lease value | Heartbeat does | Meaning |
+|---|---|---|---|
+| ours | this consumer | extend the TTL | normal case |
+| ours | missing | take it again | it expired (pause, Redis restart without the key) and nobody took the message |
+| ours | another consumer | stop, report `onLeaseLost` | another worker took the lease; `MessageContext.leaseHeld()` turns `false` |
+| another consumer's | any | stop, report `onLeaseLost` | another worker reclaimed the message |
+| gone | any | delete our lease, never re-create it | acknowledged, or Redis lost its data |
+
+A renewal never runs after the message has finished on this instance: the worker closes the lease of a
+message (waiting for a renewal already in progress) before acknowledging, dead-lettering or releasing it.
+Otherwise a renewal taken from an older snapshot could write the lease back after its deletion, leaving
+an orphan key until the TTL and, for a message left pending, delaying its reclaim by a whole TTL.
 
 Lease keys include the lane because two streams can hold the same record id: Redis builds ids from the
 clock, so two `XADD` in the same millisecond on two streams both get `<ms>-0`.

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A lease renewal racing with the end of a message could write the lease back after the acknowledgement
+  or release had deleted it: an orphan lease until the TTL, and a reclaim delayed by a whole TTL for
+  messages left pending. Renewals are now closed before the lease is released, and the renewal script
+  only renews entries still pending to this consumer.
+
 ### Added
 
 - Core: `QueueDefinition` (prefix, group, priority lanes, dead-letter stream), `StreamProducer`,

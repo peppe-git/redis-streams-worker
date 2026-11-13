@@ -44,10 +44,19 @@ public final class Scripts {
             """);
 
     /**
-     * Compare-and-extend of a lease. KEYS: lease. ARGV: owner, ttl ms.
-     * Returns 1 = renewed, 2 = was missing and has been re-acquired, 0 = held by another owner.
+     * Compare-and-extend of a lease, only while the entry is still pending to the owner.
+     * KEYS: lease, stream. ARGV: owner (= consumer), ttl ms, group, id.
+     * Returns 1 = renewed, 2 = was missing and has been re-acquired, 0 = the entry or its lease belongs to
+     * another consumer, 3 = the entry is no longer pending (acknowledged, or data lost): the lease is
+     * deleted if it is ours, never re-created.
      */
     static final Script RENEW_LEASE = new Script("""
+            local p = redis.call('XPENDING', KEYS[2], ARGV[3], ARGV[4], ARGV[4], 1)
+            if #p == 0 then
+              if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
+              return 3
+            end
+            if p[1][2] ~= ARGV[1] then return 0 end
             local v = redis.call('GET', KEYS[1])
             if v == ARGV[1] then
               redis.call('PEXPIRE', KEYS[1], ARGV[2])
@@ -139,8 +148,10 @@ public final class Scripts {
         return new ClaimResult(((Number) reply.get(0)).intValue(), ((Number) reply.get(1)).longValue());
     }
 
-    public static long renewLease(RedisCommands<String, String> redis, String lease, String owner, long ttlMs) {
-        Long r = RENEW_LEASE.run(redis, ScriptOutputType.INTEGER, keys(lease), owner, Long.toString(ttlMs));
+    public static long renewLease(RedisCommands<String, String> redis, String lease, String stream, String group,
+            String id, String owner, long ttlMs) {
+        Long r = RENEW_LEASE.run(redis, ScriptOutputType.INTEGER, keys(lease, stream), owner, Long.toString(ttlMs),
+                group, id);
         return r == null ? 0 : r;
     }
 

@@ -103,6 +103,20 @@ public final class RedisStreamsWorker implements AutoCloseable {
     private ScheduledExecutorService heartbeat;
     private Thread pollThread;
 
+    /** Test seam: lets a test force the order of the heartbeat against the other threads. */
+    interface Hooks {
+        Hooks NONE = new Hooks() {
+        };
+
+        default void beforeLeaseRenewal(String lane, String id) {
+        }
+
+        default void afterLeaseRenewal(String lane, String id) {
+        }
+    }
+
+    private volatile Hooks hooks = Hooks.NONE;
+
     private volatile long lastPollAtMillis;
     private volatile boolean redisUnavailable;
     private volatile int lastCapacity;
@@ -265,6 +279,10 @@ public final class RedisStreamsWorker implements AutoCloseable {
     /** {@code true} while the poll loop cannot reach Redis. */
     public boolean redisUnavailable() {
         return redisUnavailable;
+    }
+
+    void hooks(Hooks hooks) {
+        this.hooks = hooks == null ? Hooks.NONE : hooks;
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -486,7 +504,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
         MessageRef ref = new MessageRef(lane, message.id());
         String key = workKeyOf(message);
         if (key != null && !runningKeys.add(key)) {
-            Deferred deferred = new Deferred(ref, message, key);
+            Deferred deferred = new Deferred(ref, message, key, new LeaseGuard());
             Deferred existing = deferredByKey.putIfAbsent(key, deferred);
             if (existing == null) {
                 if (!leaseHeld) {
@@ -565,6 +583,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
 
     private void finish(Running r, Outcome outcome, Throwable error, Duration duration) {
         try {
+            r.lease.close(); // no renewal may follow the ack or release below
             switch (outcome) {
                 case ACK -> complete(r.ref, r.message, FinishAction.ACK, null);
                 case DEAD_LETTER -> complete(r.ref, r.message, FinishAction.DEAD_LETTER,
@@ -600,7 +619,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
             }
             log.warn("Acknowledgement of message {} on lane '{}' failed ({}); retrying while the worker runs",
                     message.id(), message.lane(), e.toString());
-            pendingFinishes.put(ref, new PendingFinish(ref, message, action, reason));
+            pendingFinishes.put(ref, new PendingFinish(ref, message, action, reason, new LeaseGuard()));
             listener.onAckFailed(message, e);
         }
     }
@@ -636,7 +655,8 @@ public final class RedisStreamsWorker implements AutoCloseable {
         try {
             applyFinish(redis, ref, message, FinishAction.DEAD_LETTER, reason);
         } catch (RuntimeException e) {
-            pendingFinishes.put(ref, new PendingFinish(ref, message, FinishAction.DEAD_LETTER, reason));
+            pendingFinishes.put(ref, new PendingFinish(ref, message, FinishAction.DEAD_LETTER, reason,
+                    new LeaseGuard()));
             throw e;
         }
     }
@@ -656,6 +676,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
 
     private void retryPendingFinishes(RedisCommands<String, String> redis) {
         for (PendingFinish p : List.copyOf(pendingFinishes.values())) {
+            p.lease.close();
             try {
                 applyFinish(redis, p.ref, p.message, p.action, p.reason);
                 pendingFinishes.remove(p.ref, p);
@@ -666,6 +687,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
                     pendingFinishes.remove(p.ref, p);
                     listener.onAckRejected(p.message, "not-pending");
                 } else {
+                    p.lease.reopen(); // still ours and still pending: keep renewing until the retry works
                     throw e;
                 }
             }
@@ -675,6 +697,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
     private void resumeDeferred(String key) {
         Deferred d = deferredByKey.remove(key);
         if (d != null) {
+            d.lease.close(); // the running message takes the lease over
             log.info("Deferred message {} on lane '{}' starts now", d.message.id(), d.message.lane());
             submit(d.message, true);
         }
@@ -683,6 +706,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
     private void releaseDeferred() {
         for (Deferred d : List.copyOf(deferredByKey.values())) {
             deferredByKey.remove(d.workKey, d);
+            d.lease.close();
             releaseLease(d.ref);
         }
     }
@@ -716,14 +740,17 @@ public final class RedisStreamsWorker implements AutoCloseable {
             RedisCommands<String, String> redis = sharedConnection.sync();
             long ttl = options.leaseTtl().toMillis();
             for (Running r : List.copyOf(inFlight.values())) {
-                long result = renew(redis, r.ref, ttl);
-                if (result < 0) {
-                    continue;
+                hooks.beforeLeaseRenewal(r.ref.lane().name(), r.ref.id());
+                long result = r.lease.renewIfOpen(() -> renew(redis, r.ref, ttl));
+                hooks.afterLeaseRenewal(r.ref.lane().name(), r.ref.id());
+                if (result == LeaseGuard.SKIPPED || result < 0) {
+                    continue; // finished meanwhile, or Redis error (retried at the next tick)
                 }
-                boolean held = result != 0;
+                boolean held = result == 1 || result == 2;
                 if (!held && r.leaseHeld.compareAndSet(true, false)) {
-                    log.warn("Lease of running message {} on lane '{}' is now held by another consumer: the "
-                            + "message has been reclaimed elsewhere", r.message.id(), r.message.lane());
+                    log.warn("Running message {} on lane '{}' {}", r.message.id(), r.message.lane(),
+                            result == 0 ? "is now owned by another consumer: it has been reclaimed elsewhere"
+                                    : "is no longer pending: acknowledged elsewhere, or Redis lost its data");
                     listener.onLeaseLost(r.message);
                 }
                 if (held && result == 2) {
@@ -733,13 +760,15 @@ public final class RedisStreamsWorker implements AutoCloseable {
                 listener.onLeaseRenewed(r.message, held && r.leaseHeld.get());
             }
             for (Deferred d : List.copyOf(deferredByKey.values())) {
-                if (renew(redis, d.ref, ttl) == 0) {
+                long result = d.lease.renewIfOpen(() -> renew(redis, d.ref, ttl));
+                if (result == 0 || result == 3) {
                     deferredByKey.remove(d.workKey, d);
                     log.warn("Deferred message {} was reclaimed by another consumer", d.message.id());
                 }
             }
             for (PendingFinish p : List.copyOf(pendingFinishes.values())) {
-                if (renew(redis, p.ref, ttl) == 0) {
+                long result = p.lease.renewIfOpen(() -> renew(redis, p.ref, ttl));
+                if (result == 0 || result == 3) {
                     pendingFinishes.remove(p.ref, p);
                 }
             }
@@ -748,10 +777,14 @@ public final class RedisStreamsWorker implements AutoCloseable {
         }
     }
 
-    /** 1 renewed, 2 re-acquired, 0 held by another consumer, -1 Redis error. */
+    /**
+     * Renews a lease only while its entry is still pending to this consumer (see the script). 1 renewed,
+     * 2 re-acquired, 0 owned by another consumer, 3 no longer pending, -1 Redis error.
+     */
     private long renew(RedisCommands<String, String> redis, MessageRef ref, long ttl) {
         try {
-            return Scripts.renewLease(redis, queue.leaseKey(ref.lane(), ref.id()), consumer, ttl);
+            return Scripts.renewLease(redis, queue.leaseKey(ref.lane(), ref.id()), ref.lane().streamKey(),
+                    queue.group(), ref.id(), consumer, ttl);
         } catch (RuntimeException e) {
             log.debug("Lease renewal failed for {} ({})", ref, e.toString());
             return -1;
@@ -938,6 +971,7 @@ public final class RedisStreamsWorker implements AutoCloseable {
         final QueueMessage message;
         final String workKey;
         final AtomicBoolean leaseHeld = new AtomicBoolean(true);
+        final LeaseGuard lease = new LeaseGuard();
         volatile Future<?> future;
         volatile String deadLetterReason;
 
@@ -968,10 +1002,37 @@ public final class RedisStreamsWorker implements AutoCloseable {
         }
     }
 
-    private record Deferred(MessageRef ref, QueueMessage message, String workKey) {
+    private record Deferred(MessageRef ref, QueueMessage message, String workKey, LeaseGuard lease) {
     }
 
-    private record PendingFinish(MessageRef ref, QueueMessage message, FinishAction action, String reason) {
+    private record PendingFinish(MessageRef ref, QueueMessage message, FinishAction action, String reason,
+            LeaseGuard lease) {
+    }
+
+    /**
+     * Orders the renewals of one lease against its end. The heartbeat renews from a snapshot of the running
+     * messages, so without this a renewal could run just after the acknowledgement or the release deleted
+     * the lease, and write it back: an orphan lease until the TTL, and a message left pending that nobody
+     * may reclaim for a whole TTL. {@link #close()} waits for a renewal in progress; renewals after it are
+     * skipped.
+     */
+    private static final class LeaseGuard {
+
+        static final long SKIPPED = Long.MIN_VALUE;
+
+        private boolean closed;
+
+        synchronized long renewIfOpen(java.util.function.LongSupplier renewal) {
+            return closed ? SKIPPED : renewal.getAsLong();
+        }
+
+        synchronized void close() {
+            closed = true;
+        }
+
+        synchronized void reopen() {
+            closed = false;
+        }
     }
 
     /** Builder of {@link RedisStreamsWorker}. */
