@@ -119,7 +119,7 @@ scan_commits() {
     $c = $1 if /^commit (\w+)/;
     if (/(?<![A-Za-z0-9_.\/-])(?:PR-\d{1,4}|it-\d{2,4}|[ABDEFLMORSTV]\d{1,4})(?![A-Za-z0-9_])/) { print "commit $c: [commit-message] $_"; $f++ }
     for my $re (@private) { if ($_ =~ $re) { print "commit $c: [commit-message private-pattern] $_"; $f++; last } }
-    for my $e (/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g) { next if $e eq "noreply\@anthropic.com"; print "commit $c: [commit-email] $e\n"; $f++ }
+    for my $e (/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g) { next if $e eq "noreply\@anthropic.com" || $e eq "support\@github.com" || $e =~ /\@users\.noreply\.github\.com$/; print "commit $c: [commit-email] $e\n"; $f++ }
     END { exit($f > 0 ? 1 : 0) }'
 }
 
