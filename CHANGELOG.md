@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The Spring Boot 4 compatibility module could be moved off Lettuce 7 by a dependency update: it no
+  longer declares Lettuce and takes the version managed by Spring Boot 4.
 - A lease renewal racing with the end of a message could write the lease back after the acknowledgement
   or release had deleted it: an orphan lease until the TTL, and a reclaim delayed by a whole TTL for
   messages left pending. Renewals are now closed before the lease is released, and the renewal script
