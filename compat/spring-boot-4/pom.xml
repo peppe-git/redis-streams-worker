@@ -17,7 +17,7 @@
     <description>Not published. Runs the auto-configuration scenarios and the core on Spring Boot 4 with Lettuce 7.</description>
 
     <properties>
-        <spring-boot-4.version>4.1.2</spring-boot-4.version>
+        <spring-boot-4.version>4.2.0</spring-boot-4.version>
         <maven.deploy.skip>true</maven.deploy.skip>
         <maven.install.skip>true</maven.install.skip>
         <maven.source.skip>true</maven.source.skip>
